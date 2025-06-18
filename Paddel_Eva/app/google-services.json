@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "8837851316",
+    "project_id": "paddeleva-f6599",
+    "storage_bucket": "paddeleva-f6599.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:8837851316:android:71afdd67fd1e67139b4fe1",
+        "android_client_info": {
+          "package_name": "com.example.paddel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUY_Fk846RJLWQjGG9mJis5CFdesjmMls"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
