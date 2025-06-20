@@ -62,8 +62,13 @@ dependencies {
     implementation ("com.squareup.okhttp3:okhttp:4.10.0")
 
     // Firebase
+    /*
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+     */
+
+    implementation ("com.google.firebase:firebase-auth-ktx:23.2.1")
+    implementation ("com.google.firebase:firebase-firestore-ktx:25.1.4")
 
     // AndroidX y Jetpack
     implementation("androidx.core:core-ktx:1.10.0")
