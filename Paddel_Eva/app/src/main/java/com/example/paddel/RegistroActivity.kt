@@ -47,6 +47,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import androidx.compose.foundation.*
+import java.util.*
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Spacer
 
 data class Commune(val id: String, val name: String)
 
@@ -63,10 +67,12 @@ class RegistroActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+
 fun RegisterFinalScreen() {
     val context = LocalContext.current
-    val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
+
+    // Estados para campos
     var nombre by remember { mutableStateOf("") }
     var rut by remember { mutableStateOf("") }
     var numero by remember { mutableStateOf("") }
@@ -79,9 +85,11 @@ fun RegisterFinalScreen() {
     var selectedCountryName by remember { mutableStateOf("") }
     var selectedRegionName by remember { mutableStateOf("") }
     var selectedCommune by remember { mutableStateOf<Commune?>(null) }
+
     var countryList by remember { mutableStateOf(listOf<String>()) }
     var regionList by remember { mutableStateOf(listOf<String>()) }
     var communeList by remember { mutableStateOf(listOf<Commune>()) }
+
     val hasUpperCase = password.any { it.isUpperCase() }
     val hasNumber = password.any { it.isDigit() }
     val specialChars = "!@#\$%^&*()-_=+[]{};':\",.<>/?"
@@ -89,9 +97,11 @@ fun RegisterFinalScreen() {
     val hasLength = password.length >= 8
     val passwordsMatch = password == confirmPassword
     val requisitosCumplidos = hasUpperCase && hasNumber && hasSpecial && hasLength
+
     var shakeFields by remember { mutableStateOf(setOf<String>()) }
     var missingFieldsMessage by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+
     val coroutineScope = rememberCoroutineScope()
 
     val calendar = Calendar.getInstance()
@@ -108,21 +118,22 @@ fun RegisterFinalScreen() {
         "Seleccionar Fecha"
     }
 
-    // Degradado de fondo
     val backgroundColors = listOf(
-        Color(0xFFFFA726), // Naranja claro
-        Color(0xFFFDD835), // Amarillo pastel
-        Color(0xFFE57373)  // Rojo suave
+        Color(0xFFFFA726),
+        Color(0xFFFDD835),
+        Color(0xFFE57373)
     )
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    var currentStep by remember { mutableStateOf(0) }
+    var isRutValidNow by remember { mutableStateOf(true) }
+    var isRutInUse by remember { mutableStateOf(false) }
 
+    Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Brush.verticalGradient(backgroundColors))
         )
-
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
@@ -143,316 +154,102 @@ fun RegisterFinalScreen() {
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .fillMaxWidth()
-            ) {
-                // Nombre
-                val shakeNombre by animateFloatAsState(
-                    targetValue = if ("nombre" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                OutlinedTextField(
-                    value = nombre,
-                    onValueChange = { nombre = it },
-                    label = { Text("Nombre") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeNombre },
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "nombre" in shakeFields
-                )
-
-                // RUT
-                val shakeRut by animateFloatAsState(
-                    targetValue = if ("rut" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                OutlinedTextField(
-                    value = rut,
-                    onValueChange = { newText ->
+            when (currentStep) {
+                0 -> StepOne(
+                    nombre = nombre,
+                    rut = rut,
+                    email = email,
+                    selectedCountryName = selectedCountryName,
+                    selectedRegionName = selectedRegionName,
+                    selectedCommune = selectedCommune,
+                    onNombreChange = { nombre = it },
+                    onRutChange = { newText ->
                         rut = newText.filter { it.isDigit() || it == '.' || it == '-' || it == 'K' || it == 'k' }
                         if (rut.length > 12) rut = rut.take(12)
+
+                        isRutValidNow = validarRUT(rut)
+
+                        firestore.collection("usuarios")
+                            .whereEqualTo("rut", cleanRUT(rut))
+                            .get()
+                            .addOnSuccessListener { snapshot ->
+                                isRutInUse = !snapshot.isEmpty
+                            }
                     },
-                    label = { Text("RUT (ej: 123456789-1)") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeRut },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "rut" in shakeFields
-                )
-
-                val shakeTelefono by animateFloatAsState(
-                    targetValue = if ("numero" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                OutlinedTextField(
-                    value = numero,
-                    onValueChange = { numero = it.filter { it.isDigit() } },
-                    label = { Text("Número telefónico") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeTelefono },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "numero" in shakeFields
-                )
-
-                val shakeDireccion by animateFloatAsState(
-                    targetValue = if ("direccion" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                OutlinedTextField(
-                    value = direccion,
-                    onValueChange = { direccion = it },
-                    label = { Text("Dirección") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeDireccion },
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "direccion" in shakeFields
-                )
-
-                val shakeCorreo by animateFloatAsState(
-                    targetValue = if ("email" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Correo Electrónico") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeCorreo },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "email" in shakeFields
-                )
-
-                val shakePais by animateFloatAsState(
-                    targetValue = if ("pais" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                Text(text = "País", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                CountrySelector(
-                    items = countryList,
-                    selectedItem = selectedCountryName,
-                    onItemSelected = { selectedCountryName = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakePais }
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val shakeRegion by animateFloatAsState(
-                    targetValue = if ("region" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                Text(text = "Región", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                RegionSelector(
-                    items = regionList,
-                    selectedItem = selectedRegionName,
-                    onItemSelected = { selectedRegionName = it },
-                    enabled = selectedCountryName.isNotEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeRegion }
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val shakeComuna by animateFloatAsState(
-                    targetValue = if ("comuna" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                Text(text = "Comuna", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                CommuneSelector(
-                    items = communeList.map { it.name },
-                    selectedItem = selectedCommune?.name ?: "",
-                    onItemSelected = { name ->
+                    onEmailChange = { email = it },
+                    onDireccionChange = { direccion = it },
+                    onNumeroChange = { numero = it.filter { it.isDigit() } },
+                    onCountrySelected = { selectedCountryName = it },
+                    onRegionSelected = { selectedRegionName = it },
+                    onCommuneSelected = { name ->
                         selectedCommune = communeList.find { it.name == name }
                     },
-                    enabled = selectedRegionName.isNotEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeComuna }
+                    countryList = countryList,
+                    regionList = regionList,
+                    communeList = communeList.map { it.name },
+                    shakeFields = shakeFields,
+                    missingFieldsMessage = missingFieldsMessage,
+                    isRutValidNow = isRutValidNow,
+                    isRutInUse = isRutInUse,
+                    direccion = direccion,
+                    numero = numero
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(text = "Género", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    GenderOption(icon = Icons.Default.Male, label = "Masculino", selected = gender == "Masculino") {
-                        gender = "Masculino"
-                    }
-                    GenderOption(
-                        icon = Icons.Default.Female,
-                        label = "Femenino",
-                        selected = gender == "Femenino",
-                        containerColor = if (gender == "Femenino") Color(0xFFAB47BC).copy(alpha = 0.9f) else Color.LightGray.copy(alpha = 0.8f)
-                    ) {
-                        gender = "Femenino"
-                    }
-                }
-                Text(text = "Fecha De Nacimiento", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                val shakeFecha by animateFloatAsState(
-                    targetValue = if ("fecha" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-
-                    Button(
-                        onClick = {
-                            DatePickerDialog(
-                                context as android.app.Activity,
-                                { _, yearD, monthD, dayD ->
-                                    if (yearD > maxYear || (yearD == maxYear && monthD > maxMonth) ||
-                                        (yearD == maxYear && monthD == maxMonth && dayD > maxDay)
-                                    ) {
-                                        Toast.makeText(
-                                            context,
-                                            "No puedes seleccionar una fecha futura.",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } else {
-                                        day = dayD
-                                        month = monthD
-                                        year = yearD
-                                        birthdayFormatted = "$day/${month + 1}/$year"
-                                    }
-                                },
-                                maxYear,
-                                maxMonth,
-                                maxDay
-                            ).show()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer { translationX = shakeFecha }
-                    ) {
-                        Text(text = dateText)
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                var passwordVisible by remember { mutableStateOf(false) }
-                val shakePassword by animateFloatAsState(
-                    targetValue = if ("password" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Contraseña") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakePassword },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = null
-                            )
-                        }
+                1 -> StepTwo(
+                    gender = gender,
+                    birthdayFormatted = birthdayFormatted,
+                    dateText = dateText,
+                    onGenderChange = { gender = it },
+                    onBirthdayChange = { newDate ->
+                        birthdayFormatted = newDate
+                        day = newDate.split("/")[0].toInt()
+                        month = newDate.split("/")[1].toInt() - 1
+                        year = newDate.split("/")[2].toInt()
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "password" in shakeFields
+                    shakeFields = shakeFields,
+                    missingFieldsMessage = missingFieldsMessage
                 )
-                RequisitoItem("Al menos 8 caracteres", hasLength, shakeFields.contains("password"))
-                RequisitoItem("Una letra mayúscula", hasUpperCase, shakeFields.contains("password"))
-                RequisitoItem("Un número", hasNumber, shakeFields.contains("password"))
-                RequisitoItem("Un carácter especial", hasSpecial, shakeFields.contains("password"))
-
-                val shakeConfirm by animateFloatAsState(
-                    targetValue = if ("confirmPassword" in shakeFields) 10f else 0f,
-                    animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+                2 -> StepThree(
+                    password = password,
+                    confirmPassword = confirmPassword,
+                    requisitosCumplidos = requisitosCumplidos,
+                    passwordsMatch = passwordsMatch,
+                    onPasswordChange = { password = it },
+                    onConfirmPasswordChange = { confirmPassword = it },
+                    shakeFields = shakeFields,
+                    missingFieldsMessage = missingFieldsMessage
                 )
-                OutlinedTextField(
-                    value = confirmPassword,
-                    onValueChange = { confirmPassword = it },
-                    label = { Text("Confirmar Contraseña") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { translationX = shakeConfirm },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = "confirmPassword" in shakeFields
-                )
-
-                // Mensaje de error
-                if (missingFieldsMessage.isNotBlank()) {
-                    Text(
-                        text = missingFieldsMessage,
-                        color = Color.Red,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Botón de registro con efecto
-                val scale by animateFloatAsState(if (loading) 0.95f else 1f)
-                val rotate by animateFloatAsState(if (loading) 10f else 0f)
-
-                Button(
-                    onClick = {
-                        val missing = mutableSetOf<String>()
-                        missingFieldsMessage = ""
-
-                        if (nombre.isBlank()) missing.add("nombre")
-                        if (rut.isBlank()) missing.add("rut")
-                        if (numero.isBlank()) missing.add("numero")
-                        if (direccion.isBlank()) missing.add("direccion")
-                        if (email.isBlank()) missing.add("email")
-                        if (selectedCountryName.isBlank()) missing.add("pais")
-                        if (selectedRegionName.isBlank()) missing.add("region")
-                        if (selectedCommune == null || selectedCommune!!.name.isBlank()) missing.add("comuna")
-                        if (gender.isBlank()) missing.add("género")
-                        if (birthdayFormatted.isBlank()) missing.add("fecha")
-                        if (password.isBlank()) missing.add("password")
-                        if (confirmPassword.isBlank()) missing.add("confirmPassword")
-
-                        if (missing.isNotEmpty()) {
-                            shakeFields = missing
-                            missingFieldsMessage = "Por favor completa los campos faltantes."
-                            coroutineScope.launch {
-                                delay(300)
-                                shakeFields = emptySet()
-                            }
-                            return@Button
-                        }
-
+                3 -> StepFour(
+                    nombre = nombre,
+                    rut = rut,
+                    email = email,
+                    pais = selectedCountryName,
+                    region = selectedRegionName,
+                    comuna = selectedCommune?.name ?: "",
+                    genero = gender,
+                    fechaNac = birthdayFormatted,
+                    direccionValida = direccion.isNotBlank(),
+                    numeroValido = numero.isNotBlank(),
+                    isEmailValid = isValidEmail(email),
+                    isRutValid = validarRUT(rut),
+                    requisitosCumplidos = requisitosCumplidos,
+                    passwordsMatch = passwordsMatch,
+                    onNavigateToStep = { step -> currentStep = step },
+                    onRegistrarseClick = {
                         val isEmailValid = isValidEmail(email)
                         val isRutValid = validarRUT(rut)
                         val isPasswordOk = requisitosCumplidos && passwordsMatch
 
                         if (!isRutValid) {
                             Toast.makeText(context, "El RUT es inválido.", Toast.LENGTH_SHORT).show()
-                            return@Button
+                            return@StepFour
                         }
-
                         if (!isEmailValid) {
                             Toast.makeText(context, "Correo electrónico inválido.", Toast.LENGTH_SHORT).show()
-                            return@Button
+                            return@StepFour
                         }
-
                         if (!isPasswordOk) {
                             Toast.makeText(context, "La contraseña no cumple los requisitos.", Toast.LENGTH_SHORT).show()
-                            return@Button
+                            return@StepFour
                         }
 
                         loading = true
@@ -465,45 +262,35 @@ fun RegisterFinalScreen() {
                                     loading = false
                                     return@addOnSuccessListener
                                 }
-
-                                auth.createUserWithEmailAndPassword(email, password)
-                                    .addOnCompleteListener { task ->
-                                        if (task.isSuccessful) {
-                                            val user = auth.currentUser
-                                            val userData = hashMapOf(
-                                                "nombre" to nombre,
-                                                "rut" to cleanRUT(rut),
-                                                "numero" to numero,
-                                                "direccion" to direccion,
-                                                "email" to email,
-                                                "genero" to gender,
-                                                "fecha_nacimiento" to birthdayFormatted,
-                                                "ubicacion" to mapOf(
-                                                    "pais" to selectedCountryName,
-                                                    "region" to selectedRegionName,
-                                                    "comuna" to (selectedCommune?.name ?: "")
-                                                ),
-                                                "code_recovery" to "",
-                                                "state_recovery" to false
-                                            )
-
-
-
-                                            user?.uid?.let { uid ->
-                                                firestore.collection("usuarios").document(uid)
-                                                    .set(userData)
-                                                    .addOnSuccessListener {
-                                                        Toast.makeText(context, "Cuenta creada exitosamente", Toast.LENGTH_SHORT).show()
-                                                        context.startActivity(Intent(context, LoginActivity::class.java))
-                                                        (context as? android.app.Activity)?.finish()
-                                                    }
-                                                    .addOnFailureListener {
-                                                        Toast.makeText(context, "Error al guardar datos", Toast.LENGTH_SHORT).show()
-                                                    }
-                                            }
-                                        } else {
-                                            Toast.makeText(context, "Error: ${task.exception?.message}", Toast.LENGTH_LONG).show()
-                                        }
+                                val hashedPassword = org.mindrot.jbcrypt.BCrypt.hashpw(password, org.mindrot.jbcrypt.BCrypt.gensalt())
+                                val userData = hashMapOf<String, Any>(
+                                    "nombre" to nombre,
+                                    "rut" to cleanRUT(rut),
+                                    "numero" to numero,
+                                    "direccion" to direccion,
+                                    "email" to email.lowercase(),
+                                    "genero" to gender,
+                                    "fecha_nacimiento" to birthdayFormatted,
+                                    "ubicacion" to mapOf(
+                                        "pais" to selectedCountryName,
+                                        "region" to selectedRegionName,
+                                        "comuna" to (selectedCommune?.name ?: "")
+                                    ),
+                                    "password_hash" to hashedPassword,
+                                    "code_recovery" to "",
+                                    "state_recovery" to false
+                                )
+                                firestore.collection("usuarios")
+                                    .add(userData)
+                                    .addOnSuccessListener {
+                                        Toast.makeText(context, "Cuenta creada exitosamente", Toast.LENGTH_SHORT).show()
+                                        context.startActivity(Intent(context, LoginActivity::class.java))
+                                        (context as? android.app.Activity)?.finish()
+                                    }
+                                    .addOnFailureListener {
+                                        Toast.makeText(context, "Error al guardar datos", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .addOnCompleteListener {
                                         loading = false
                                     }
                             }
@@ -512,43 +299,161 @@ fun RegisterFinalScreen() {
                                 loading = false
                             }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .scale(scale)
-                        .rotate(rotate),
-                    enabled = !loading
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    loading = loading
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (currentStep > 0) {
+                    Button(onClick = { currentStep-- }) {
+                        Text("Anterior")
                     }
-                    Text("Registrarse", color = Color.White)
+                } else {
+                    Spacer(modifier = Modifier.width(80.dp))
                 }
 
-                TextButton(
-                    onClick = {
-                        context.startActivity(Intent(context, LoginActivity::class.java))
-                    },
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    Text("¿Ya tienes cuenta? Inicia sesión")
+                if (currentStep < 3) {
+                    Button(
+                        onClick = {
+                            val missing = mutableSetOf<String>()
+                            missingFieldsMessage = ""
+                            when (currentStep) {
+                                0 -> {
+                                    if (nombre.isBlank()) missing.add("nombre")
+                                    if (rut.isBlank()) missing.add("rut")
+                                    if (email.isBlank()) missing.add("email")
+                                    if (selectedCountryName.isBlank()) missing.add("pais")
+                                    if (selectedRegionName.isBlank()) missing.add("region")
+                                    if (selectedCommune == null || selectedCommune!!.name.isBlank()) missing.add("comuna")
+                                    if (direccion.isBlank()) missing.add("direccion")
+                                    if (numero.isBlank()) missing.add("numero")
+                                }
+                                1 -> {
+                                    if (gender.isBlank()) missing.add("género")
+                                    if (birthdayFormatted.isBlank()) missing.add("fecha")
+                                }
+                                2 -> {
+                                    if (!requisitosCumplidos) missing.add("password")
+                                    if (!passwordsMatch) missing.add("confirmPassword")
+                                }
+                            }
+
+                            if (missing.isNotEmpty()) {
+                                shakeFields = missing
+                                missingFieldsMessage = "Por favor completa los campos faltantes."
+                                coroutineScope.launch {
+                                    delay(300)
+                                    shakeFields = emptySet()
+                                }
+                                return@Button
+                            }
+
+                            currentStep++
+                        }
+                    ) {
+                        Text("Siguiente")
+                    }
+                } else {
+                    val rotation by animateFloatAsState(if (loading) 360f else 0f)
+                    val scale by animateFloatAsState(if (loading) 1.1f else 1f)
+
+                    Button(
+                        onClick = {
+                            val isEmailValid = isValidEmail(email)
+                            val isRutValid = validarRUT(rut)
+                            val isPasswordOk = requisitosCumplidos && passwordsMatch
+
+                            if (!isRutValid) {
+                                Toast.makeText(context, "El RUT es inválido.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (!isEmailValid) {
+                                Toast.makeText(context, "Correo electrónico inválido.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (!isPasswordOk) {
+                                Toast.makeText(context, "La contraseña no cumple los requisitos.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            firestore.collection("usuarios")
+                                .whereEqualTo("rut", cleanRUT(rut))
+                                .get()
+                                .addOnSuccessListener { querySnapshot ->
+                                    if (!querySnapshot.isEmpty()) {
+                                        Toast.makeText(context, "Este RUT ya está registrado.", Toast.LENGTH_SHORT).show()
+                                        loading = false
+                                        return@addOnSuccessListener
+                                    }
+                                    val hashedPassword = org.mindrot.jbcrypt.BCrypt.hashpw(password, org.mindrot.jbcrypt.BCrypt.gensalt())
+                                    val userData = hashMapOf<String, Any>(
+                                        "nombre" to nombre,
+                                        "rut" to cleanRUT(rut),
+                                        "numero" to numero,
+                                        "direccion" to direccion,
+                                        "email" to email.lowercase(),
+                                        "genero" to gender,
+                                        "fecha_nacimiento" to birthdayFormatted,
+                                        "ubicacion" to mapOf(
+                                            "pais" to selectedCountryName,
+                                            "region" to selectedRegionName,
+                                            "comuna" to (selectedCommune?.name ?: "")
+                                        ),
+                                        "password_hash" to hashedPassword,
+                                        "code_recovery" to "",
+                                        "state_recovery" to false
+                                    )
+                                    firestore.collection("usuarios")
+                                        .add(userData)
+                                        .addOnSuccessListener {
+                                            loading = false
+                                            Toast.makeText(context, "Registro completado", Toast.LENGTH_SHORT).show()
+                                            context.startActivity(Intent(context, LoginActivity::class.java))
+                                            (context as? android.app.Activity)?.finish()
+                                        }
+                                        .addOnFailureListener {
+                                            loading = false
+                                            Toast.makeText(context, "Error al crear usuario", Toast.LENGTH_SHORT).show()
+                                        }
+                                }
+                                .addOnFailureListener {
+                                    loading = false
+                                    Toast.makeText(context, "Error al validar RUT", Toast.LENGTH_SHORT).show()
+                                }
+                        },
+                        enabled = !loading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .scale(scale)
+                            .rotate(rotation)
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Crear Cuenta", color = Color.White)
+                    }
                 }
+            }
+
+            TextButton(
+                onClick = {
+                    context.startActivity(Intent(context, LoginActivity::class.java))
+                },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text("¿Ya tienes cuenta? Inicia sesión")
             }
         }
     }
 
-    // --- Carga de datos desde Firestore ---
-
     LaunchedEffect(Unit) {
-        firestore.collection("countries")
-            .get()
-            .addOnSuccessListener { snapshot ->
-                countryList = snapshot.documents.mapNotNull { it.getString("name") }
-            }
+        firestore.collection("countries").get().addOnSuccessListener { snapshot ->
+            countryList = snapshot.documents.mapNotNull { it.getString("name") }
+        }
     }
 
     LaunchedEffect(selectedCountryName) {
@@ -599,140 +504,454 @@ fun RegisterFinalScreen() {
     }
 }
 
-// --- SELECTORS ---
-@OptIn(ExperimentalMaterial3Api::class)
+// PASO 1: Datos básicos
 @Composable
-fun CountrySelector(
-    items: List<String>,
-    selectedItem: String,
-    onItemSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
+fun StepOne(
+    nombre: String,
+    rut: String,
+    email: String,
+    selectedCountryName: String,
+    selectedRegionName: String,
+    selectedCommune: Commune?,
+    onNombreChange: (String) -> Unit,
+    onRutChange: (String) -> Unit,
+    onEmailChange: (String) -> Unit,
+    onDireccionChange: (String) -> Unit,
+    onNumeroChange: (String) -> Unit,
+    onCountrySelected: (String) -> Unit,
+    onRegionSelected: (String) -> Unit,
+    onCommuneSelected: (String) -> Unit,
+    countryList: List<String>,
+    regionList: List<String>,
+    communeList: List<String>,
+    shakeFields: Set<String>,
+    missingFieldsMessage: String,
+    isRutValidNow: Boolean,
+    isRutInUse: Boolean,
+    direccion: String,
+    numero: String
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = modifier
-    ) {
-        OutlinedTextField(
-            readOnly = true,
-            value = if (selectedItem.isEmpty()) "Selecciona tu país" else selectedItem,
-            onValueChange = {},
-            label = { Text("País") },
-            modifier = Modifier.menuAnchor(),
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            shape = RoundedCornerShape(12.dp)
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-        ) {
-            items.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item) },
-                    onClick = {
-                        onItemSelected(item)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
+    val scrollState = rememberScrollState()
+    Column(modifier = Modifier.verticalScroll(scrollState)) {
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun RegionSelector(
-    items: List<String>,
-    selectedItem: String,
-    onItemSelected: (String) -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = modifier
-    ) {
+        // Nombre
+        val shakeNombre by animateFloatAsState(
+            targetValue = if ("nombre" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
         OutlinedTextField(
-            readOnly = true,
-            value = if (selectedItem.isEmpty()) "Selecciona tu región" else selectedItem,
-            onValueChange = {},
-            label = { Text("Región") },
-            modifier = Modifier.menuAnchor(),
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            value = nombre,
+            onValueChange = onNombreChange,
+            label = { Text("Nombre") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeNombre },
             shape = RoundedCornerShape(12.dp),
-            enabled = enabled
+            isError = "nombre" in shakeFields
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-        ) {
-            items.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item) },
-                    onClick = {
-                        onItemSelected(item)
-                        expanded = false
-                    }
-                )
-            }
+
+        // RUT
+        val shakeRut by animateFloatAsState(
+            targetValue = if ("rut" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        OutlinedTextField(
+            value = rut,
+            onValueChange = onRutChange,
+            label = { Text("RUT (ej: 123456789-1)") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeRut },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            shape = RoundedCornerShape(12.dp),
+            isError = "rut" in shakeFields
+        )
+        if (!isRutValidNow && rut.isNotBlank()) {
+            Text(text = "RUT inválido", color = Color.Red, fontSize = 12.sp)
+        }
+        if (isRutInUse && rut.isNotBlank()) {
+            Text(text = "Este RUT ya está registrado", color = Color.Red, fontSize = 12.sp)
+        }
+
+        // Correo
+        val shakeCorreo by animateFloatAsState(
+            targetValue = if ("email" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        OutlinedTextField(
+            value = email,
+            onValueChange = onEmailChange,
+            label = { Text("Correo Electrónico") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeCorreo },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            shape = RoundedCornerShape(12.dp),
+            isError = "email" in shakeFields
+        )
+
+        // Dirección
+        val shakeDireccion by animateFloatAsState(
+            targetValue = if ("direccion" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        OutlinedTextField(
+            value = direccion,
+            onValueChange = onDireccionChange,
+            label = { Text("Dirección") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeDireccion },
+            shape = RoundedCornerShape(12.dp),
+            isError = "direccion" in shakeFields
+        )
+
+        // Teléfono
+        val shakeTelefono by animateFloatAsState(
+            targetValue = if ("numero" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        OutlinedTextField(
+            value = numero,
+            onValueChange = onNumeroChange,
+            label = { Text("Número telefónico") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeTelefono },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            shape = RoundedCornerShape(12.dp),
+            isError = "numero" in shakeFields
+        )
+
+        // País
+        val shakePais by animateFloatAsState(
+            targetValue = if ("pais" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        Text("País", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        CountrySelector(
+            items = countryList,
+            selectedItem = selectedCountryName,
+            onItemSelected = onCountrySelected,
+            modifier = Modifier.graphicsLayer { translationX = shakePais }
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Región
+        val shakeRegion by animateFloatAsState(
+            targetValue = if ("region" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        Text("Región", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        RegionSelector(
+            items = regionList,
+            selectedItem = selectedRegionName,
+            onItemSelected = onRegionSelected,
+            enabled = selectedCountryName.isNotEmpty(),
+            modifier = Modifier.graphicsLayer { translationX = shakeRegion }
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Comuna
+        val shakeComuna by animateFloatAsState(
+            targetValue = if ("comuna" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        Text("Comuna", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        CommuneSelector(
+            items = communeList,
+            selectedItem = selectedCommune?.name ?: "",
+            onItemSelected = onCommuneSelected,
+            enabled = selectedRegionName.isNotEmpty(),
+            modifier = Modifier.graphicsLayer { translationX = shakeComuna }
+        )
+
+        if (missingFieldsMessage.isNotBlank()) {
+            Text(
+                text = missingFieldsMessage,
+                color = Color.Red,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// PASO 2: Género y fecha
 @Composable
-fun CommuneSelector(
-    items: List<String>,
-    selectedItem: String,
-    onItemSelected: (String) -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
+fun StepTwo(
+    gender: String,
+    birthdayFormatted: String,
+    dateText: String,
+    onGenderChange: (String) -> Unit,
+    onBirthdayChange: (String) -> Unit,
+    shakeFields: Set<String>,
+    missingFieldsMessage: String
+) {
+    val context = LocalContext.current
+    val maxYear = Calendar.getInstance().get(Calendar.YEAR)
+    val maxMonth = Calendar.getInstance().get(Calendar.MONTH)
+    val maxDay = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
+
+    Column {
+        val shakeGenero by animateFloatAsState(
+            targetValue = if ("género" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        Text("Género", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .graphicsLayer { translationX = shakeGenero },
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GenderOption(icon = Icons.Default.Male, label = "Masculino", selected = gender == "Masculino") {
+                onGenderChange("Masculino")
+            }
+            GenderOption(
+                icon = Icons.Default.Female,
+                label = "Femenino",
+                selected = gender == "Femenino",
+                containerColor = if (gender == "Femenino") Color(0xFFAB47BC).copy(alpha = 0.9f) else Color.LightGray.copy(alpha = 0.8f)
+            ) {
+                onGenderChange("Femenino")
+            }
+        }
+
+        val shakeFecha by animateFloatAsState(
+            targetValue = if ("fecha" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        Text("Fecha De Nacimiento", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Button(
+            onClick = {
+                DatePickerDialog(
+                    context as android.app.Activity,
+                    { _, yearD, monthD, dayD ->
+                        if (yearD > maxYear || (yearD == maxYear && monthD > maxMonth) ||
+                            (yearD == maxYear && monthD == maxMonth && dayD > maxDay)
+                        ) {
+                            Toast.makeText(context, "No puedes seleccionar una fecha futura.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            onBirthdayChange("$dayD/${monthD + 1}/$yearD")
+                        }
+                    },
+                    maxYear,
+                    maxMonth,
+                    maxDay
+                ).show()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeFecha }
+        ) {
+            Text(dateText)
+        }
+
+        if (missingFieldsMessage.isNotBlank()) {
+            Text(
+                text = missingFieldsMessage,
+                color = Color.Red,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+// PASO 3: Contraseña
+@Composable
+fun StepThree(
+    password: String,
+    confirmPassword: String,
+    requisitosCumplidos: Boolean,
+    passwordsMatch: Boolean,
+    onPasswordChange: (String) -> Unit,
+    onConfirmPasswordChange: (String) -> Unit,
+    shakeFields: Set<String>,
+    missingFieldsMessage: String
+) {
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    Column {
+        val shakePassword by animateFloatAsState(
+            targetValue = if ("password" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+
+        RequisitoItem("Al menos 8 caracteres", password.length >= 8, "password" in shakeFields)
+        RequisitoItem("Una letra mayúscula", password.any { it.isUpperCase() }, "password" in shakeFields)
+        RequisitoItem("Un número", password.any { it.isDigit() }, "password" in shakeFields)
+        RequisitoItem("Un carácter especial", password.any { "!@#\$%^&*()-_=+[]{};':\",.<>/?".contains(it) }, "password" in shakeFields)
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = onPasswordChange,
+            label = { Text("Contraseña") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakePassword },
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = null
+                    )
+                }
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            shape = RoundedCornerShape(12.dp),
+            isError = "password" in shakeFields
+        )
+
+
+        val shakeConfirm by animateFloatAsState(
+            targetValue = if ("confirmPassword" in shakeFields) 10f else 0f,
+            animationSpec = repeatable(iterations = 3, animation = tween(50), repeatMode = RepeatMode.Reverse)
+        )
+        OutlinedTextField(
+            value = confirmPassword,
+            onValueChange = onConfirmPasswordChange,
+            label = { Text("Confirmar Contraseña") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeConfirm },
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            shape = RoundedCornerShape(12.dp),
+            isError = "confirmPassword" in shakeFields
+        )
+
+        if (!passwordsMatch && confirmPassword.isNotBlank()) {
+            Text(
+                text = "Las contraseñas no coinciden.",
+                color = Color.Red,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+
+        if (missingFieldsMessage.isNotBlank()) {
+            Text(
+                text = missingFieldsMessage,
+                color = Color.Red,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun StepFour(
+    nombre: String,
+    rut: String,
+    email: String,
+    pais: String,
+    region: String,
+    comuna: String,
+    genero: String,
+    fechaNac: String,
+    direccionValida: Boolean,
+    numeroValido: Boolean,
+    isEmailValid: Boolean,
+    isRutValid: Boolean,
+    requisitosCumplidos: Boolean,
+    passwordsMatch: Boolean,
+    onNavigateToStep: (Int) -> Unit,
+    onRegistrarseClick: () -> Unit,
+    loading: Boolean
+) {
+    val scrollState = rememberScrollState()
+    Column(modifier = Modifier.verticalScroll(scrollState)) {
+        SectionTitle(title = "Datos Personales", stepNumber = 0, onNavigate = onNavigateToStep) {
+            InfoRow(label = "Nombre", value = nombre, valid = nombre.isNotBlank())
+            InfoRow(label = "RUT", value = rut, valid = isRutValid)
+            InfoRow(label = "Correo", value = email, valid = isEmailValid)
+            InfoRow(label = "Teléfono", value = numeroValido)
+            InfoRow(label = "Dirección", value = direccionValida)
+        }
+
+        SectionTitle(title = "Ubicación", stepNumber = 0, onNavigate = onNavigateToStep) {
+            InfoRow(label = "País", value = pais, valid = pais.isNotBlank())
+            InfoRow(label = "Región", value = region, valid = region.isNotBlank())
+            InfoRow(label = "Comuna", value = comuna, valid = comuna.isNotBlank())
+        }
+
+        SectionTitle(title = "Datos Biométricos", stepNumber = 1, onNavigate = onNavigateToStep) {
+            InfoRow(label = "Género", value = genero, valid = genero.isNotBlank())
+            InfoRow(label = "Fecha de nacimiento", value = fechaNac, valid = fechaNac.isNotBlank())
+        }
+
+        val rotation by animateFloatAsState(if (loading) 360f else 0f)
+        val scale by animateFloatAsState(if (loading) 1.1f else 1f)
+
+
+    }
+}
+
+@Composable
+fun SectionTitle(
+    title: String,
+    stepNumber: Int,
+    onNavigate: (Int) -> Unit,
+    content: @Composable () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = modifier
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(Color.LightGray.copy(alpha = 0.3f)),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        OutlinedTextField(
-            readOnly = true,
-            value = if (selectedItem.isEmpty()) "Selecciona tu comuna" else selectedItem,
-            onValueChange = {},
-            label = { Text("Comuna") },
-            modifier = Modifier.menuAnchor(),
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            shape = RoundedCornerShape(12.dp),
-            enabled = enabled
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            items.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item) },
-                    onClick = {
-                        onItemSelected(item)
-                        expanded = false
-                    }
-                )
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Button(
+                onClick = { onNavigate(stepNumber) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF357ABD)),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text("Ir a", color = Color.White, fontSize = 14.sp)
+            }
+        }
+        if (expanded) {
+            Column(modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp)) {
+                content()
             }
         }
     }
 }
 
-// --- FUNCIONES AUXILIARES ---
+@Composable
+fun InfoRow(label: String, value: Any, valid: Boolean = true) {
+    val textColor = if (valid) Color.Black else Color.Red
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text("$label:", fontWeight = FontWeight.Bold)
+        Text(
+            text = if (value is String && value.isBlank()) "Campo vacío" else "✓",
+            color = textColor
+        )
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+}
 
+// Validación de RUT
 fun validarRUT(rut: String): Boolean {
     val cleanRut = rut.filter { it.isDigit() || it == 'K' || it == 'k' }
     if (cleanRut.length < 8) return false
-
     val body = cleanRut.dropLast(1)
     val dvInput = cleanRut.last().toString().uppercase()
     var suma = 0
@@ -745,7 +964,7 @@ fun validarRUT(rut: String): Boolean {
     val dvFormateado = when (dvEsperado) {
         11 -> "0"
         10 -> "K"
-        else -> dvEsperado.toString()
+        else -> "$dvEsperado"
     }
     return dvInput == dvFormateado
 }
@@ -765,21 +984,17 @@ fun isValidEmail(email: String): Boolean {
 fun RequisitoItem(text: String, cumplido: Boolean, shake: Boolean) {
     val alpha by animateFloatAsState(if (shake) 0.9f else 1f)
     val scale by animateFloatAsState(if (shake) 1.05f else 1f)
-
     val textColor = when {
         cumplido -> Color(0xFF4CAF50)
         shake -> Color.Red
         else -> Color.Gray
     }
-
     Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.alpha = alpha
-            }
+        modifier = Modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            this.alpha = alpha
+        }
     ) {
         Text(
             text = if (cumplido) "✓ $text" else if (shake) "⚠ $text" else "• $text",
@@ -827,6 +1042,100 @@ fun GenderOption(
                     color = if (selected) Color.White else Color.Black,
                     textAlign = TextAlign.Center
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CountrySelector(
+    items: List<String>,
+    selectedItem: String,
+    onItemSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
+        OutlinedTextField(
+            readOnly = true,
+            value = if (selectedItem.isEmpty()) "Selecciona tu país" else selectedItem,
+            onValueChange = {},
+            label = { Text("País") },
+            modifier = Modifier.menuAnchor(),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            shape = RoundedCornerShape(12.dp)
+        )
+        ExposedDropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+            items.forEach { item ->
+                DropdownMenuItem(text = { Text(item) }, onClick = {
+                    onItemSelected(item)
+                    expanded = false
+                })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RegionSelector(
+    items: List<String>,
+    selectedItem: String,
+    onItemSelected: (String) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
+        OutlinedTextField(
+            readOnly = true,
+            value = if (selectedItem.isEmpty()) "Selecciona tu región" else selectedItem,
+            onValueChange = {},
+            label = { Text("Región") },
+            modifier = Modifier.menuAnchor(),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            shape = RoundedCornerShape(12.dp),
+            enabled = enabled
+        )
+        ExposedDropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+            items.forEach { item ->
+                DropdownMenuItem(text = { Text(item) }, onClick = {
+                    onItemSelected(item)
+                    expanded = false
+                })
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommuneSelector(
+    items: List<String>,
+    selectedItem: String,
+    onItemSelected: (String) -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
+        OutlinedTextField(
+            readOnly = true,
+            value = if (selectedItem.isEmpty()) "Selecciona tu comuna" else selectedItem,
+            onValueChange = {},
+            label = { Text("Comuna") },
+            modifier = Modifier.menuAnchor(),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            shape = RoundedCornerShape(12.dp),
+            enabled = enabled
+        )
+        ExposedDropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+            items.forEach { item ->
+                DropdownMenuItem(text = { Text(item) }, onClick = {
+                    onItemSelected(item)
+                    expanded = false
+                })
             }
         }
     }

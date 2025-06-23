@@ -45,38 +45,43 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Calendar
-
-
+import org.mindrot.jbcrypt.BCrypt
+import androidx.compose.animation.core.animateFloatAsState
+import java.util.*
+import androidx.compose.animation.core.*
 
 class RecoPasswActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            RecuperarContrasenaScreen()
+            PaddelTheme(darkTheme = false) {
+                RecuperarContrasenaScreen()
+            }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecuperarContrasenaScreen() {
     val context = LocalContext.current
-    val auth = FirebaseAuth.getInstance()
     val firestore = FirebaseFirestore.getInstance()
 
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var showErrorEmail by remember { mutableStateOf(false) }
-    var showErrorCode by remember { mutableStateOf(false) }
-    var loading by remember { mutableStateOf(false) }
-    var step by remember { mutableStateOf(0) }
+
+    var step by remember { mutableStateOf(0) } // 0: correo, 1: código, 2: nueva contraseña
     var recoveryCode by remember { mutableStateOf("") }
     var recoveryActive by remember { mutableStateOf(false) }
     var timeLeft by remember { mutableStateOf(120) }
 
-    // Validaciones de contraseña
+    var showErrorEmail by remember { mutableStateOf(false) }
+    var showErrorCode by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+
     val hasUpperCase = password.any { it.isUpperCase() }
     val hasNumber = password.any { it.isDigit() }
     val specialChars = "!@#\$%^&*()-_=+[]{};':\",.<>/?"
@@ -84,6 +89,8 @@ fun RecuperarContrasenaScreen() {
     val hasLength = password.length >= 8
     val passwordsMatch = password == confirmPassword
     val requisitosCumplidos = hasUpperCase && hasNumber && hasSpecial && hasLength
+
+    val coroutineScope = rememberCoroutineScope()
 
     val backgroundColors = listOf(
         Color(0xFFFFA726), // Naranja claro
@@ -127,11 +134,11 @@ fun RecuperarContrasenaScreen() {
                         label = { Text("Correo Electrónico") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        isError = showErrorEmail
                     )
                     if (showErrorEmail && email.isNotEmpty()) {
                         Text(
-                            text = "Correo inválido",
+                            text = "Correo no registrado",
                             color = Color.Red,
                             fontSize = 13.sp
                         )
@@ -140,73 +147,60 @@ fun RecuperarContrasenaScreen() {
                     Button(
                         onClick = {
                             if (email.isBlank()) {
-                                Toast.makeText(context, "Por favor, ingrese su correo.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Ingrese su correo", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            if (!isEmailValidFormat(email)) {
-                                showErrorEmail = true
-                                Toast.makeText(context, "Correo electrónico inválido", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-
                             loading = true
-                            val codeGenerated = (1000..9999).random().toString()
-                            recoveryCode = codeGenerated
-                            recoveryActive = true
-                            timeLeft = 120
-
-                            auth.fetchSignInMethodsForEmail(email)
-                                .addOnSuccessListener { result ->
-                                    if (result.signInMethods.isNullOrEmpty()) {
-                                        Toast.makeText(context, "Usuario no encontrado", Toast.LENGTH_SHORT).show()
+                            val emailLower = email.lowercase()
+                            firestore.collection("usuarios")
+                                .whereEqualTo("email", emailLower)
+                                .get()
+                                .addOnSuccessListener { snapshot ->
+                                    if (snapshot.isEmpty) {
+                                        showErrorEmail = true
                                         loading = false
                                         return@addOnSuccessListener
                                     }
 
+                                    loading = true
+                                    val codeGenerated = (1000..9999).random().toString()
+                                    recoveryCode = codeGenerated
+                                    recoveryActive = true
+                                    timeLeft = 120
+
+                                    // Guardar en Firestore
+                                    val userData = hashMapOf<String, Any>(
+                                        "code_recovery" to codeGenerated,
+                                        "state_recovery" to false
+                                    )
+                                    val userId = snapshot.documents[0].id
                                     firestore.collection("usuarios")
-                                        .whereEqualTo("email", email)
-                                        .get()
-                                        .addOnSuccessListener { querySnapshot ->
-                                            if (querySnapshot.isEmpty) {
-                                                Toast.makeText(context, "Usuario no encontrado", Toast.LENGTH_SHORT).show()
-                                                loading = false
-                                                return@addOnSuccessListener
+                                        .document(userId)
+                                        .update(userData)
+                                        .addOnSuccessListener {
+                                            sendRecoveryCodeByEmail(context, emailLower, codeGenerated)
+                                            Toast.makeText(context, "Código enviado", Toast.LENGTH_SHORT).show()
+                                            step = 1
+                                            // Iniciar temporizador
+                                            coroutineScope.launch {
+                                                while (timeLeft > 0 && recoveryActive) {
+                                                    delay(1000)
+                                                    timeLeft--
+                                                }
+                                                if (recoveryActive) {
+                                                    Toast.makeText(context, "Código expirado", Toast.LENGTH_SHORT).show()
+                                                    firestore.collection("usuarios")
+                                                        .document(userId)
+                                                        .update("code_recovery", "")
+                                                    recoveryActive = false
+                                                    step = 0
+                                                }
                                             }
-
-                                            val userId = querySnapshot.documents[0].id
-                                            val updateMap = hashMapOf<String, Any>(
-                                                "code_recovery" to codeGenerated,
-                                                "state_recovery" to true
-                                            )
-
-                                            firestore.collection("usuarios").document(userId)
-                                                .update(updateMap)
-                                                .addOnSuccessListener {
-                                                    sendRecoveryCodeByEmail(context, email, codeGenerated)
-                                                    step = 1
-                                                    loading = false
-
-                                                    CoroutineScope(Dispatchers.Main).launch {
-                                                        while (timeLeft > 0 && recoveryActive) {
-                                                            delay(1000)
-                                                            timeLeft--
-                                                        }
-                                                        if (recoveryActive) {
-                                                            firestore.collection("usuarios").document(userId)
-                                                                .update("state_recovery", false)
-                                                            recoveryActive = false
-                                                            Toast.makeText(context, "Código expirado", Toast.LENGTH_SHORT).show()
-                                                            step = 0
-                                                        }
-                                                    }
-                                                }
-                                                .addOnFailureListener {
-                                                    Toast.makeText(context, "Error al guardar el código", Toast.LENGTH_SHORT).show()
-                                                    loading = false
-                                                }
                                         }
                                         .addOnFailureListener {
-                                            Toast.makeText(context, "Error al buscar usuario", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Error al guardar código", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnCompleteListener {
                                             loading = false
                                         }
                                 }
@@ -221,20 +215,20 @@ fun RecuperarContrasenaScreen() {
                         if (loading) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(24.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
+                                strokeWidth = 2.dp,
+                                color = Color.White
                             )
-                        } else {
-                            Text("Enviar Código", color = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
                         }
+                        Text("Enviar Código", color = Color.White)
                     }
                 }
 
                 1 -> {
-                    val formattedTime = "%d:%02d".format(timeLeft / 60, timeLeft % 60)
                     Text("Verificar Código", style = MaterialTheme.typography.headlineMedium)
+                    val formattedTime = "%d:%02d".format(timeLeft / 60, timeLeft % 60)
                     Text(
-                        text = "Se ha enviado un código de 4 dígitos a tu correo. Ingresa el código para continuar.",
+                        text = "Se ha enviado un código de 6 dígitos a tu correo. Ingresa el código para continuar.",
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
@@ -248,22 +242,18 @@ fun RecuperarContrasenaScreen() {
                     OutlinedTextField(
                         value = code,
                         onValueChange = { newText ->
-                            if (newText.length <= 4 && newText.all { it.isDigit() }) {
+                            if (newText.length <= 6 && newText.all { it.isLetterOrDigit() }) {
                                 code = newText
                                 showErrorCode = false
                             }
                         },
                         label = { Text("Código de Verificación") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
                     if (showErrorCode && code.isNotEmpty()) {
-                        Text(
-                            text = "Código incorrecto",
-                            color = Color.Red,
-                            fontSize = 13.sp
-                        )
+                        Text(text = "Código incorrecto", color = Color.Red, fontSize = 13.sp)
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
@@ -302,12 +292,14 @@ fun RecuperarContrasenaScreen() {
                     RequisitoItems("Un carácter especial", hasSpecial, shake = false)
 
                     var passwordVisible by remember { mutableStateOf(false) }
+                    val visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation()
 
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
                         label = { Text("Contraseña") },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = visualTransformation,
                         trailingIcon = {
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Icon(
@@ -317,7 +309,6 @@ fun RecuperarContrasenaScreen() {
                             }
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
 
@@ -325,18 +316,14 @@ fun RecuperarContrasenaScreen() {
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it },
                         label = { Text("Confirmar Contraseña") },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = visualTransformation,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         shape = RoundedCornerShape(12.dp)
                     )
 
                     if (!passwordsMatch && confirmPassword.isNotEmpty()) {
-                        Text(
-                            text = "Las contraseñas no coinciden",
-                            color = Color.Red,
-                            fontSize = 13.sp
-                        )
+                        Text(text = "Las contraseñas no coinciden", color = Color.Red, fontSize = 13.sp)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -346,62 +333,59 @@ fun RecuperarContrasenaScreen() {
                                 Toast.makeText(context, "Verifica los requisitos", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-
-                            auth.fetchSignInMethodsForEmail(email)
-                                .addOnSuccessListener { result ->
-                                    if (result.signInMethods.isNullOrEmpty()) {
-                                        Toast.makeText(context, "Usuario no existe", Toast.LENGTH_SHORT).show()
+                            loading = true
+                            firestore.collection("usuarios")
+                                .whereEqualTo("email", email.lowercase())
+                                .get()
+                                .addOnSuccessListener { snapshot ->
+                                    if (snapshot.isEmpty) {
+                                        Toast.makeText(context, "Usuario no encontrado", Toast.LENGTH_SHORT).show()
+                                        loading = false
                                         return@addOnSuccessListener
                                     }
-
-                                    auth.signInWithEmailAndPassword(email, "dummy_password")
-                                        .addOnCompleteListener { task ->
-                                            if (task.isSuccessful || auth.currentUser != null) {
-                                                val user = auth.currentUser
-                                                user?.updatePassword(password)
-                                                    ?.addOnCompleteListener { updateTask ->
-                                                        if (updateTask.isSuccessful) {
-                                                            Toast.makeText(context, "Contraseña actualizada", Toast.LENGTH_SHORT).show()
-
-                                                            firestore.collection("usuarios")
-                                                                .whereEqualTo("email", email)
-                                                                .get()
-                                                                .addOnSuccessListener { snapshot ->
-                                                                    if (snapshot.isEmpty) return@addOnSuccessListener
-                                                                    val userId = snapshot.documents[0].id
-                                                                    firestore.collection("usuarios").document(userId)
-                                                                        .update("state_recovery", false)
-                                                                }
-
-                                                            recoveryActive = false
-                                                            context.startActivity(Intent(context, LoginActivity::class.java))
-                                                        } else {
-                                                            Toast.makeText(context, "Error al actualizar contraseña", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    }
-                                            } else {
-                                                Toast.makeText(context, "No se pudo iniciar sesión", Toast.LENGTH_SHORT).show()
-                                            }
+                                    val hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt())
+                                    val userId = snapshot.documents[0].id
+                                    firestore.collection("usuarios")
+                                        .document(userId)
+                                        .update(
+                                            "password_hash", hashedPassword,
+                                            "code_recovery", "",
+                                            "state_recovery", false
+                                        )
+                                        .addOnSuccessListener {
+                                            Toast.makeText(context, "Contraseña actualizada", Toast.LENGTH_SHORT).show()
+                                            context.startActivity(Intent(context, LoginActivity::class.java))
+                                        }
+                                        .addOnFailureListener {
+                                            Toast.makeText(context, "Error al actualizar contraseña", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .addOnCompleteListener {
+                                            loading = false
                                         }
                                 }
+                                .addOnFailureListener {
+                                    Toast.makeText(context, "Error al buscar usuario", Toast.LENGTH_SHORT).show()
+                                    loading = false
+                                }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !loading
                     ) {
-                        Text("Actualizar Contraseña", color = Color.White)
+                        if (loading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Cambiar Contraseña", color = Color.White)
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            TextButton(onClick = {
-                context.startActivity(Intent(context, LoginActivity::class.java))
-            }) {
-                Text("Volver al inicio")
             }
         }
     }
 }
-
 
 @Composable
 fun RequisitoItems(text: String, cumplido: Boolean, shake: Boolean) {
@@ -429,9 +413,48 @@ fun RequisitoItems(text: String, cumplido: Boolean, shake: Boolean) {
     }
 }
 
-fun isEmailValidFormat(email: String): Boolean {
-    val pattern = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,6}\$")
-    return pattern.matches(email)
+fun sendRecoveryCodeByEmail(context: Context, email: String, code: String) {
+    val client = OkHttpClient()
+
+    val jsonBody = JSONObject().apply {
+        put("service_id", "service_9aadq5j")
+        put("template_id", "template_1v77gyp")
+        put("user_id", "Y0PggIiBi8Aiv2s24")
+
+        val templateParams = JSONObject().apply {
+            put("to_email", email)
+            put("passcode", code)
+            put("name", "Usuario"
+            )
+            put("time", getCurrentTimePlusMinutes(2))
+        }
+
+        put("template_params", templateParams)
+    }
+
+    val mediaType = "application/json".toMediaTypeOrNull()
+    val body = RequestBody.create(mediaType, jsonBody.toString())
+
+    val request = Request.Builder()
+        .url("https://api.emailjs.com/api/v1.0/email/send")
+        .post(body)
+        .build()
+
+    client.newCall(request).enqueue(object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+            (context as? android.app.Activity)?.runOnUiThread {
+                Toast.makeText(context, "No se pudo enviar el código", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+            if (!response.isSuccessful) {
+                (context as? android.app.Activity)?.runOnUiThread {
+                    Toast.makeText(context, "Error al enviar correo", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    })
 }
 
 fun getCurrentTimePlusMinutes(minutes: Int): String {
@@ -440,47 +463,4 @@ fun getCurrentTimePlusMinutes(minutes: Int): String {
     val hour = cal.get(Calendar.HOUR_OF_DAY)
     val minute = cal.get(Calendar.MINUTE)
     return "$hour:${String.format("%02d", minute)}"
-}
-
-fun sendRecoveryCodeByEmail(context: Context, email: String, code: String) {
-    val client = OkHttpClient()
-    val jsonBody = JSONObject().apply {
-        put("service_id", "service_9aadq5j")
-        put("template_id", "template_1v77gyp")
-        put("user_id", "Y0PggIiBi8Aiv2s24")
-        val templateParams = JSONObject().apply {
-            put("to_email", email)
-            put("passcode", code)
-            put("name", "Usuario")
-            put("time", getCurrentTimePlusMinutes(2))
-        }
-        put("template_params", templateParams)
-    }
-    val mediaType = "application/json".toMediaTypeOrNull()
-    val body = RequestBody.create(mediaType, jsonBody.toString())
-    val request = Request.Builder()
-        .url("https://api.emailjs.com/api/v1.0/email/send")
-        .post(body)
-        .build()
-    client.newCall(request).enqueue(object : Callback {
-        override fun onResponse(call: Call, response: Response) {
-            val responseBody = response.body?.string()
-            println("Response code: ${response.code}")
-            println("Response body: $responseBody")
-            if (!response.isSuccessful) {
-                (context as? android.app.Activity)?.runOnUiThread {
-                    Toast.makeText(context, "Error al enviar correo: $responseBody", Toast.LENGTH_LONG).show()
-                }
-                return
-            }
-            (context as? android.app.Activity)?.runOnUiThread {
-                Toast.makeText(context, "Correo enviado exitosamente", Toast.LENGTH_SHORT).show()
-            }
-        }
-        override fun onFailure(call: Call, e: IOException) {
-            (context as? android.app.Activity)?.runOnUiThread {
-                Toast.makeText(context, "No hay conexión a internet", Toast.LENGTH_SHORT).show()
-            }
-        }
-    })
 }

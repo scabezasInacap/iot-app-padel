@@ -43,6 +43,8 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import org.mindrot.jbcrypt.BCrypt
+
 
 class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,8 +61,7 @@ class LoginActivity : ComponentActivity() {
 @Composable
 fun LoginScreen() {
     val context = LocalContext.current
-    val auth = FirebaseAuth.getInstance()
-    val db = FirebaseFirestore.getInstance()
+    val firestore = FirebaseFirestore.getInstance()
     var rut by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -164,30 +165,28 @@ fun LoginScreen() {
                         return@Button
                     }
                     cargando = true
-                    db.collection("usuarios")
+                    firestore.collection("usuarios")
                         .whereEqualTo("rut", rutLimpiado)
                         .get()
                         .addOnSuccessListener { documents ->
                             cargando = false
-                            if (!documents.isEmpty) {
-                                val userDoc = documents.documents[0]
-                                val email = userDoc.getString("email") ?: ""
-                                if (email.isNotEmpty()) {
-                                    auth.signInWithEmailAndPassword(email, password)
-                                        .addOnCompleteListener { task ->
-                                            if (task.isSuccessful) {
-                                                Toast.makeText(context, "Inicio exitoso", Toast.LENGTH_SHORT).show()
-                                                val intent = Intent(context, MainMenuActivity::class.java)
-                                                context.startActivity(intent)
-                                            } else {
-                                                Toast.makeText(context, "Contraseña incorrecta", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                } else {
-                                    Toast.makeText(context, "Sin correo asociado al RUT", Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
+                            if (documents.isEmpty) {
                                 Toast.makeText(context, "RUT no registrado", Toast.LENGTH_SHORT).show()
+                                return@addOnSuccessListener
+                            }
+
+                            val userData = documents.documents[0]
+                            val storedHash = userData.getString("password_hash") ?: run {
+                                Toast.makeText(context, "Error interno", Toast.LENGTH_SHORT).show()
+                                return@run
+                            }
+
+                            if (BCrypt.checkpw(password, storedHash as String?)) {
+                                Toast.makeText(context, "Inicio exitoso", Toast.LENGTH_SHORT).show()
+                                val intent = Intent(context, MainMenuActivity::class.java)
+                                context.startActivity(intent)
+                            } else {
+                                Toast.makeText(context, "Contraseña incorrecta", Toast.LENGTH_SHORT).show()
                             }
                         }
                         .addOnFailureListener {
