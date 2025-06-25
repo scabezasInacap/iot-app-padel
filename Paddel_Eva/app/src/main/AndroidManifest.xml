@@ -10,7 +10,7 @@
         android:icon="@mipmap/paddel_launcher"
         android:roundIcon="@mipmap/paddel_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Paddel"
+        android:theme="@style/AppTheme.Fullscreen"
         tools:targetApi="31">
         <activity
             android:name=".RegistroActivity"

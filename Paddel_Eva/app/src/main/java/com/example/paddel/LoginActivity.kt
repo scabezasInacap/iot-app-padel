@@ -106,6 +106,7 @@ fun LoginScreen() {
             // Campo de RUT
             TextField(
                 value = rut,
+                singleLine = true,
                 onValueChange = { nuevoRut ->
                     rut = nuevoRut.filter { it.isDigit() || it == '.' || it == '-' || it == 'K' || it == 'k' }
                     if (rut.length > 12) rut = rut.take(12)
@@ -127,6 +128,7 @@ fun LoginScreen() {
             // Contraseña
             TextField(
                 value = password,
+                singleLine = true,
                 onValueChange = { password = it },
                 label = { Text("Contraseña") },
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
