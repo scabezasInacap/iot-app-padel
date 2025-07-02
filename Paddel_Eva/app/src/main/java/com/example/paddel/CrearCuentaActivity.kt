@@ -483,8 +483,12 @@ fun RegisterFinalScreen() {
                                                     "pais" to selectedCountryName,
                                                     "region" to selectedRegionName,
                                                     "comuna" to (selectedCommune?.name ?: "")
-                                                )
+                                                ),
+                                                "code_recovery" to "",
+                                                "state_recovery" to false
                                             )
+
+
 
                                             user?.uid?.let { uid ->
                                                 firestore.collection("usuarios").document(uid)

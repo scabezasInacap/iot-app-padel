@@ -61,10 +61,16 @@ dependencies {
 
     implementation ("com.squareup.okhttp3:okhttp:4.10.0")
 
+
     // Firebase
+    /*
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
-
+     */
+    implementation ("com.google.firebase:firebase-auth-ktx:23.2.1")
+    implementation ("com.google.firebase:firebase-firestore-ktx:25.1.4")
+    implementation ("org.mindrot:jbcrypt:0.4")
+    implementation ("androidx.compose.animation:animation:1.6.1")
     // AndroidX y Jetpack
     implementation("androidx.core:core-ktx:1.10.0")
     implementation("androidx.activity:activity-ktx:1.10.1")
@@ -74,13 +80,14 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
-
+    implementation ("org.mindrot:jbcrypt:0.4")
     implementation ("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
     implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-
+    debugImplementation ("androidx.compose.ui:ui-tooling-preview:1.5.0")
     implementation ("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
     implementation ("com.google.firebase:firebase-firestore-ktx:24.10.0")
     implementation ("androidx.compose.runtime:runtime-livedata")
+    implementation ("com.google.accompanist:accompanist-systemuicontroller")
 
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
