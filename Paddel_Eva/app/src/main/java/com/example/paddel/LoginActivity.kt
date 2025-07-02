@@ -67,18 +67,15 @@ fun LoginScreen() {
     var passwordVisible by remember { mutableStateOf(false) }
     var cargando by remember { mutableStateOf(false) }
 
-
     val scale by animateFloatAsState(if (cargando) 0.95f else 1f)
     val rotate by animateFloatAsState(if (cargando) 10f else 0f)
 
-    // Degradado de fondo
     val backgroundColors = listOf(
-        Color(0xFF0D47A1), // Azul oscuro
-        Color(0xFF1B5E20)  // Verde oscuro
+        Color(0xFF0D47A1),
+        Color(0xFF1B5E20)
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Fondo degradado
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -176,17 +173,46 @@ fun LoginScreen() {
                                 Toast.makeText(context, "RUT no registrado", Toast.LENGTH_SHORT).show()
                                 return@addOnSuccessListener
                             }
-
                             val userData = documents.documents[0]
                             val storedHash = userData.getString("password_hash") ?: run {
                                 Toast.makeText(context, "Error interno", Toast.LENGTH_SHORT).show()
                                 return@run
                             }
-
                             if (BCrypt.checkpw(password, storedHash as String?)) {
-                                Toast.makeText(context, "Inicio exitoso", Toast.LENGTH_SHORT).show()
-                                val intent = Intent(context, MainMenuActivity::class.java)
-                                context.startActivity(intent)
+                                val verificado = userData.getBoolean("verificado") ?: false
+                                val email = userData.getString("email") ?: ""
+                                val userId = userData.id
+                                val code = userData.getString("code_recovery")
+                                val expiry = userData.getLong("code_expiry") ?: 0L
+                                val now = System.currentTimeMillis()
+                                if (verificado) {
+                                    Toast.makeText(context, "Inicio exitoso", Toast.LENGTH_SHORT).show()
+                                    val intent = Intent(context, MainMenuActivity::class.java)
+                                    context.startActivity(intent)
+                                } else {
+                                    if (!code.isNullOrBlank() && now < expiry) {
+                                        irAVerificar(context, email, expiry, userId)
+                                    } else {
+                                        val nuevoCodigo = (100000..999999).random().toString()
+                                        val nuevoExpiry = now + 24 * 60 * 60 * 1000
+                                        firestore.collection("usuarios").document(userId)
+                                            .update(
+                                                mapOf(
+                                                    "code_recovery" to nuevoCodigo,
+                                                    "code_expiry" to nuevoExpiry
+                                                )
+                                            )
+                                            .addOnSuccessListener {
+                                                val dateFormat = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+                                                val expiryDate = dateFormat.format(java.util.Date(nuevoExpiry))
+                                                sendVerificationCodeByEmail(context, email, nuevoCodigo, expiryDate)
+                                                irAVerificar(context, email, nuevoExpiry, userId)
+                                            }
+                                            .addOnFailureListener {
+                                                Toast.makeText(context, "Error al generar código de verificación", Toast.LENGTH_SHORT).show()
+                                            }
+                                    }
+                                }
                             } else {
                                 Toast.makeText(context, "Contraseña incorrecta", Toast.LENGTH_SHORT).show()
                             }
@@ -265,4 +291,14 @@ fun cleaneRUT(rut: String): String {
     return rut
         .filter { it.isDigit() || it == 'K' || it == 'k' }
         .replace("k", "K")
+}
+
+fun irAVerificar(context: android.content.Context, email: String, expiry: Long, userId: String) {
+    val intent = Intent(context, RegistroActivity::class.java)
+    intent.putExtra("verificar_email", email)
+    intent.putExtra("verificar_expiry", expiry)
+    intent.putExtra("verificar_user_id", userId)
+    intent.putExtra("verificar_desde_login", true)
+    context.startActivity(intent)
+    Toast.makeText(context, "Debes verificar tu cuenta antes de continuar", Toast.LENGTH_LONG).show()
 }
