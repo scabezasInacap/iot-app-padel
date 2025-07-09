@@ -40,7 +40,6 @@ class MainMenuActivity : ComponentActivity() {
 fun MainMenuScreen(userName: String) {
     val context = LocalContext.current
 
-    // Degradado diagonal con verdes y azulados
     val backgroundColors = listOf(
         Color(0xFF43EA7B),
         Color(0xFF1B8D4A),
@@ -58,7 +57,6 @@ fun MainMenuScreen(userName: String) {
                 )
             )
     ) {
-        // Contenedor central con transparencia y bordes redondeados
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -67,7 +65,7 @@ fun MainMenuScreen(userName: String) {
                 .background(Color.White.copy(alpha = 0.85f))
                 .padding(24.dp)
                 .align(Alignment.TopCenter),
-            horizontalAlignment = Alignment.Start
+            horizontalAlignment = Alignment.CenterHorizontally // Centra todo el contenido
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
@@ -109,7 +107,13 @@ fun MainMenuScreen(userName: String) {
                     )
                 }
             }
-            // Aquí puedes agregar más contenido del menú si lo necesitas
+            Button(
+                onClick = { /* No hace nada */ },
+                modifier = Modifier
+                    .padding(top = 32.dp)
+            ) {
+                Text("Botón Pruebas")
+            }
         }
     }
 }

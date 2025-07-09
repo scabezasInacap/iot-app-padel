@@ -187,6 +187,8 @@ fun LoginScreen() {
                                 val now = System.currentTimeMillis()
                                 if (verificado) {
                                     Toast.makeText(context, "Inicio exitoso", Toast.LENGTH_SHORT).show()
+                                    val prefs = context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
+                                    prefs.edit().putString("nombre", userData.getString("nombre") ?: "Usuario").apply()
                                     val intent = Intent(context, MainMenuActivity::class.java)
                                     context.startActivity(intent)
                                 } else {
