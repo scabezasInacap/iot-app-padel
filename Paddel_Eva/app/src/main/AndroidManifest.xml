@@ -21,6 +21,10 @@
             android:theme="@style/AppTheme.Fullscreen"
             android:exported="false" />
         <activity
+            android:name=".PerfilActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.Fullscreen" />
+        <activity
             android:theme="@style/AppTheme.Fullscreen"
             android:name=".RecoPasswActivity"
             android:exported="false" />
